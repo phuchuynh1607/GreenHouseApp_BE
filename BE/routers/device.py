@@ -169,14 +169,41 @@ async def control_device(req: DeviceControlRequest, db: db_dependency, user: use
 @router.get("/notifications")
 async def get_notifications(db: db_dependency, user: user_dependency):
     if user is None:
-        raise HTTPException(status_code=401, detail='Authentication Failed')
+        raise HTTPException(status_code=401,detail="Authentication Failed")
 
-    return db.query(Notification) \
-        .filter(Notification.user_id == user.get('id')) \
-        .order_by(Notification.created_at.desc()) \
-        .limit(50) \
-        .all()
+    results = db.query(
+        Notification,
+        Users.username
+    ).join(Users, Users.id == Notification.user_id, isouter=True)
 
+    if user.get('role') != 'admin':
+        results = results.filter(Notification.user_id == user.get('id'))
+
+    results = results.order_by(Notification.created_at.desc()).limit(100).all()
+
+    return [
+        {
+            "id": notif.id,
+            "sensor_type": notif.sensor_type,
+            "message": notif.message,
+            "current_value": notif.current_value,
+            "threshold_value": notif.threshold_value,
+            "created_at": notif.created_at,
+            "is_read": notif.is_read,
+            "user_id": notif.user_id,
+            "username": username if username else "Unknown"
+        } for notif, username in results
+    ]
+
+
+@router.put("/notifications/read-all")
+async def mark_all_as_read(db: db_dependency, user: user_dependency):
+    if user.get('user_role') != 'admin':
+        raise HTTPException(status_code=403)
+
+    db.query(Notification).filter(Notification.is_read == False).update({"is_read": True})
+    db.commit()
+    return {"message": "All notifications marked as read"}
 
 @router.get("/esp32/status")
 async def get_esp32_commands(db: db_dependency):

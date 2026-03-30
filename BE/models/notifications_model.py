@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, ForeignKey, String, Float, DateTime
+from sqlalchemy import Column, Integer, ForeignKey, String, Float, DateTime,Boolean
 from sqlalchemy.sql import func
 from BE.database import Base
 
@@ -17,3 +17,4 @@ class Notification(Base):
 
     # Chỉ cần thời gian để hiển thị trên FlatList
     created_at = Column(DateTime(timezone=True), server_default=func.now())
+    is_read = Column(Boolean, default=False)
