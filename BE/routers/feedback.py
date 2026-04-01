@@ -1,9 +1,12 @@
 from fastapi import APIRouter, HTTPException, status
 from typing import List
+
+from sqlalchemy.orm import selectinload
+
 from ..models.feedback_model import FeedbackTicket, FeedbackMessage
 from ..schemas.feedback_schema import (
-    TicketCreate, TicketResponse,
-    MessageCreate
+    TicketCreate,
+    MessageCreate, TicketResponse
 )
 from .auth import db_dependency, user_dependency
 
@@ -83,21 +86,64 @@ async def get_ticket_details(ticket_id: int, db: db_dependency, user: user_depen
 
 
 # --- 4. ADMIN: LẤY TẤT CẢ TICKET (ĐỂ QUẢN LÝ) ---
-@router.get("/admin/all-tickets", response_model=List[TicketResponse])
+@router.get("/admin/all-tickets")
 async def admin_get_all_tickets(db: db_dependency, user: user_dependency):
+    # Kiểm tra quyền Admin
     if user.get('user_role') != 'admin':
         raise HTTPException(status_code=403, detail="Admin only")
+    # Query lấy dữ liệu kèm Join
+    # Dùng selectinload thay vì joinedload nếu có nhiều messages (tránh duplicate rows)
+    tickets = db.query(FeedbackTicket) \
+        .options(
+        selectinload(FeedbackTicket.user),
+        selectinload(FeedbackTicket.messages)
+    ) \
+        .order_by(FeedbackTicket.created_at.desc()) \
+        .all()
+    result = []
+    for t in tickets:
+        initial_message = None
+        if t.messages:
+            sorted_messages = sorted(t.messages, key=lambda x: x.created_at)
+            initial_message = sorted_messages[0].message_content
+        result.append({
+            "id": t.id,
+            "user_id": t.user_id,
+            "subject": t.subject,
+            "status": t.status,
+            "created_at": t.created_at,
+            "user_name": t.user.username if t.user else "Người dùng ẩn danh",
+            "initial_message": initial_message or "Không có nội dung"
+        })
 
-    return db.query(FeedbackTicket).order_by(FeedbackTicket.created_at.desc()).all()
+    return result
 
 
 # --- 5. USER: LẤY DANH SÁCH TICKET CỦA TÔI ---
-@router.get("/my-tickets", response_model=List[TicketResponse])
+@router.get("/my-tickets")
 async def get_my_tickets(db: db_dependency, user: user_dependency):
     if user is None:
         raise HTTPException(status_code=401, detail='Authentication Failed')
+    tickets = db.query(FeedbackTicket).options(
+        selectinload(FeedbackTicket.messages)
+    ).filter(
+        FeedbackTicket.user_id == user.get('id')
+    ).order_by(FeedbackTicket.created_at.desc()).all()
+    result = []
+    for ticket in tickets:
+        initial_message = None
+        if ticket.messages:
+            sorted_messages = sorted(ticket.messages, key=lambda x: x.created_at)
+            initial_message = sorted_messages[0].message_content
+        result.append({
+            "id": ticket.id,
+            "subject": ticket.subject,
+            "status": ticket.status,
+            "created_at": ticket.created_at,
+            "initial_message": initial_message or "Không có nội dung"
+        })
 
-    return db.query(FeedbackTicket).filter(FeedbackTicket.user_id == user.get('id')).all()
+    return result
 
 
 # --- 6. ADMIN/USER: CẬP NHẬT TRẠNG THÁI TICKET (RESOLVE/CLOSE) ---

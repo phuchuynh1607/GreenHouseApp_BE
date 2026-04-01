@@ -173,10 +173,12 @@ async def get_notifications(db: db_dependency, user: user_dependency):
 
     results = db.query(
         Notification,
-        Users.username
+        Users.username,Users.role
     ).join(Users, Users.id == Notification.user_id, isouter=True)
 
-    if user.get('role') != 'admin':
+    results = results.filter(Users.role != 'admin')
+
+    if user.get('user_role') != 'admin':
         results = results.filter(Notification.user_id == user.get('id'))
 
     results = results.order_by(Notification.created_at.desc()).limit(100).all()
@@ -192,7 +194,7 @@ async def get_notifications(db: db_dependency, user: user_dependency):
             "is_read": notif.is_read,
             "user_id": notif.user_id,
             "username": username if username else "Unknown"
-        } for notif, username in results
+        } for notif, username ,role in results
     ]
 
 
