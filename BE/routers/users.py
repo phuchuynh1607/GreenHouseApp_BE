@@ -4,7 +4,7 @@ import uuid
 import os
 from BE.models.users_model import Users, LoginHistory
 from starlette import status
-from .auth import user_dependency,db_dependency, bcrypt_context
+from .auth import user_dependency,db_dependency, verify_password,hash_password
 from ..schemas.users_schema import UserVerification,UserUpdateRequest,UserResponse
 from ..schemas.login_history_schema import LoginHistoryResponse
 from typing import List
@@ -56,9 +56,9 @@ async def change_password(user:user_dependency,db:db_dependency,user_verificatio
         raise HTTPException(status_code=401,detail='Authentication Failed')
     user_model =db.query(Users).filter(Users.id == user.get('id')).first()
 
-    if not bcrypt_context.verify(user_verification.password,user_model.hashed_password):
+    if not verify_password(user_verification.password, user_model.hashed_password):
         raise HTTPException(status_code=401,detail='Error on password change')
-    user_model.hashed_password= bcrypt_context.hash(user_verification.new_password)
+    user_model.hashed_password = hash_password(user_verification.new_password)
     db.add(user_model)
     db.commit()
 
