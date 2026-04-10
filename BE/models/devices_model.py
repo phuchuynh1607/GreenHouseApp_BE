@@ -16,10 +16,7 @@ class Device(Base):
     # Giá trị -1 nghĩa là chạy 24/24 (không hẹn giờ)
     start_hour = Column(Integer, default=-1)
     end_hour = Column(Integer, default=-1)
-    # Trạng thái hiện tại (Thực tế thiết bị đang chạy ở mức bao nhiêu)
-    current_value = Column(Integer, default=0)
-    is_online = Column(Boolean, default=False)
-    last_update = Column(DateTime(timezone=True), onupdate=func.now())
+
 
 class SensorLogs(Base):
     __tablename__ = "sensor_logs"

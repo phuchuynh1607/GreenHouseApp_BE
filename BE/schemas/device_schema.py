@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator, ValidationInfo
 from datetime import datetime
 from typing import Optional
 
@@ -34,6 +34,14 @@ class DeviceControlRequest(BaseModel):
     start_hour: Optional[int] = Field(None, ge=-1, le=23)
     end_hour: Optional[int] = Field(None, ge=-1, le=23)
 
+    @field_validator('start_hour', 'end_hour')
+    @classmethod
+    def validate_hour(cls, v: Optional[int]) -> Optional[int]:
+        if v is not None and (v < -1 or v > 23):
+            raise ValueError('Hour must be -1 or between 0-23')
+        return v
+
+
 class DeviceResponse(BaseModel):
     """Schema dùng khi App lấy trạng thái các thiết bị (GET)"""
     id: int
@@ -43,9 +51,6 @@ class DeviceResponse(BaseModel):
     manual_pwm: int
     start_hour: int
     end_hour: int
-    current_value: int
-    is_online: bool
-    last_update: Optional[datetime]
 
     class Config:
         from_attributes = True
