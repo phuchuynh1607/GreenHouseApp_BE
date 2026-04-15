@@ -22,56 +22,50 @@ router = APIRouter(
 
 def calculate_device_pwm(device: Device, latest_sensor: SensorLogs, db: db_dependency) -> int:
     current_hour = datetime.datetime.now().hour
+
     # MODE 0: OFF
     if device.mode == 0:
         return 0
 
+    # Tách logic kiểm tra thời gian ra để dùng chung
+    # Trường hợp đặc biệt: -1 và -1 là chạy suốt 24/24
+    if device.start_hour == -1 and device.end_hour == -1:
+        in_time = True
+    # Trường hợp một trong hai là -1 nhưng không phải cả hai (0 -1, -1 5, ...) -> Không hợp lệ
+    elif device.start_hour == -1 or device.end_hour == -1:
+        in_time = False
+    else:
+        if device.start_hour < device.end_hour:
+            in_time = device.start_hour <= current_hour < device.end_hour
+        else:
+            in_time = current_hour >= device.start_hour or current_hour < device.end_hour
+
     # MODE 2: MANUAL
     if device.mode == 2:
-        # Kiểm tra hẹn giờ (nếu có)
-        if device.start_hour != -1 and device.end_hour != -1:
-            in_time = False
-            if device.start_hour < device.end_hour:
-                if device.start_hour <= current_hour < device.end_hour:
-                    in_time = True
-            else:
-                if current_hour >= device.start_hour or current_hour < device.end_hour:
-                    in_time = True
-            # Nếu trong khung giờ: bật theo manual_pwm
-            # Nếu ngoài khung giờ: tắt
-            return device.manual_pwm if in_time else 0
-        else:
-            # Không có hẹn giờ: bật theo manual_pwm (user toàn quyền)
-            return device.manual_pwm
+        # Nếu trong khung giờ (hoặc 24/24): bật theo manual_pwm. Ngoài giờ: tắt.
+        return device.manual_pwm if in_time else 0
+
     # MODE 1: AUTO
     if device.mode == 1:
-        # AUTO mode BẮT BUỘC phải có hẹn giờ
-        if device.start_hour == -1 or device.end_hour == -1:
-            # Không có hẹn giờ → không bao giờ chạy
-            return 0
-        # Kiểm tra có đang trong khung giờ không
-        in_time = False
-        if device.start_hour < device.end_hour:
-            if device.start_hour <= current_hour < device.end_hour:
-                in_time = True
-        else:
-            if current_hour >= device.start_hour or current_hour < device.end_hour:
-                in_time = True
-        # Nếu không trong khung giờ → tắt
+        # Nếu ngoài khung giờ hoạt động -> tắt ngay
         if not in_time:
             return 0
-        # Trong khung giờ → kiểm tra cảm biến
+
+        # Trong khung giờ -> mới bắt đầu kiểm tra cảm biến
         if not latest_sensor:
             return 0
+
         mapping = {0: 'light', 1: 'temp', 2: 'soil'}
         s_type = mapping.get(device.device_index)
-        # Lấy ngưỡng (ưu tiên user → admin)
+
+
         target_th = db.query(Threshold).filter(
             Threshold.sensor_type == s_type
-        ).order_by(Threshold.user_id.desc()).first()
+        ).order_by(Threshold.id.desc()).first()
+
         if not target_th:
             return 0
-        # Kiểm tra ngưỡng để quyết định bật/tắt
+
         should_run = False
         if s_type == 'light' and latest_sensor.light < target_th.min_value:
             should_run = True
@@ -79,6 +73,7 @@ def calculate_device_pwm(device: Device, latest_sensor: SensorLogs, db: db_depen
             should_run = True
         elif s_type == 'soil' and latest_sensor.soil < target_th.min_value:
             should_run = True
+
         return device.manual_pwm if should_run else 0
 
     return 0
@@ -91,23 +86,18 @@ DELTA = {
 }
 # --- 1. POST: NHẬN DỮ LIỆU TỪ ESP32 ---
 @router.post("/update-sensor")
-@limiter.limit("30/minute")
+@limiter.limit("240/minute")
 async def receive_sensor_data(req: SensorLogCreate, db: db_dependency,request: Request):
     current_time = datetime.datetime.now()
-    # 1. Lấy bản ghi SensorLog mới nhất từ DB để so sánh
     last_log = db.query(SensorLogs).order_by(SensorLogs.timestamp.desc()).first()
     should_save_log = False
     if not last_log:
-        # Nếu DB chưa có log nào, lưu luôn bản ghi đầu tiên
         should_save_log = True
     else:
-        # Kiểm tra điều kiện thời gian (Quá 5 phút chưa?)
         time_diff = (current_time - last_log.timestamp.replace(tzinfo=None)).total_seconds()
         if time_diff >= 300:
             should_save_log = True
         else:
-            # Kiểm tra biến động dữ liệu
-            # Nếu bất kỳ cảm biến nào lệch vượt mức DELTA -> lưu log
             diff_temp = abs((req.temp or 0) - (last_log.temp or 0))
             diff_humi = abs((req.humi or 0) - (last_log.humi or 0))
             diff_light = abs((req.light or 0) - (last_log.light or 0))
@@ -117,7 +107,7 @@ async def receive_sensor_data(req: SensorLogCreate, db: db_dependency,request: R
                     diff_light > DELTA["light"] or
                     diff_soil > DELTA["soil"]):
                 should_save_log = True
-    # Tiến hành lưu vào bảng SensorLogs nếu thỏa mãn điều kiện
+
     if should_save_log:
         new_log = SensorLogs(**req.model_dump())
         db.add(new_log)
@@ -129,8 +119,6 @@ async def receive_sensor_data(req: SensorLogCreate, db: db_dependency,request: R
         for s_type in sensor_types:
             current_val = getattr(req, s_type, None)
             if current_val is None: continue
-
-            # Lấy ngưỡng (ưu tiên user -> mặc định admin)
             target_th = db.query(Threshold).filter(
                 Threshold.sensor_type == s_type,
                 Threshold.user_id == user.id
@@ -142,8 +130,6 @@ async def receive_sensor_data(req: SensorLogCreate, db: db_dependency,request: R
             if target_th:
                 is_over = current_val > target_th.max_value
                 is_under = current_val < target_th.min_value
-
-                # --- LOGIC THÔNG BÁO (GIỮ NGUYÊN) ---
                 if is_over or is_under:
                     last_noti = db.query(Notification).filter(
                         Notification.user_id == user.id,
@@ -171,7 +157,7 @@ async def receive_sensor_data(req: SensorLogCreate, db: db_dependency,request: R
 
 # --- 2. GET: LẤY DỮ LIỆU MỚI NHẤT (Cho màn hình Dashboard trên App) ---
 @router.get("/latest-data", response_model=SensorLogResponse)
-@limiter.limit("30/minute")
+@limiter.limit("240/minute")
 async def get_latest_sensor(db: db_dependency, user: user_dependency,request: Request):
     if user is None:
         raise HTTPException(status_code=401, detail='Authentication Failed')
@@ -184,7 +170,7 @@ async def get_latest_sensor(db: db_dependency, user: user_dependency,request: Re
 
 # --- 3. GET: LẤY DANH SÁCH THIẾT BỊ (Bơm, Quạt, Đèn) ---
 @router.get("/devices", response_model=List[DeviceResponse])
-@limiter.limit("30/minute")
+@limiter.limit("240/minute")
 async def get_all_devices(db: db_dependency, user: user_dependency,request: Request):
     if user is None:
         raise HTTPException(status_code=401, detail='Authentication Failed')
@@ -200,28 +186,31 @@ async def control_device(req: DeviceControlRequest, db: db_dependency, user: use
     if not device:
         raise HTTPException(status_code=404, detail='Device not found!')
 
-    # Cập nhật từng field
+    # Cập nhật các field từ request
     if req.mode is not None:
         device.mode = req.mode
-
     if req.manual_pwm is not None:
         device.manual_pwm = req.manual_pwm
-
     if req.start_hour is not None:
         device.start_hour = req.start_hour
-
     if req.end_hour is not None:
         device.end_hour = req.end_hour
 
-    # Validation cuối: Nếu mode=1 thì phải có timer
-    if device.mode == 1 and (device.start_hour == -1 or device.end_hour == -1):
-        raise HTTPException(
-            status_code=400,
-            detail="AUTO mode requires both start_hour and end_hour"
-        )
 
-    # Reset timer khi chuyển từ AUTO sang MANUAL mà không gửi timer mới
-    if req.mode == 2 and device.start_hour != -1 and req.start_hour is None and req.end_hour is None:
+    if device.mode == 1:
+        is_all_day = (device.start_hour == -1 and device.end_hour == -1)
+        is_valid_range = (0 <= device.start_hour <= 23 and
+                          0 <= device.end_hour <= 23 and
+                          device.start_hour != device.end_hour)
+
+        if not (is_all_day or is_valid_range):
+            raise HTTPException(
+                status_code=400,
+                detail="AUTO mode requires: both hours = -1 (24/7) OR a valid 0-23h range (start != end)"
+            )
+
+    # Logic Reset Timer (giữ nguyên nếu bạn muốn xóa sạch hẹn giờ khi sang Manual)
+    if req.mode == 2 and req.start_hour is None and req.end_hour is None:
         device.start_hour = -1
         device.end_hour = -1
 
@@ -273,7 +262,7 @@ async def mark_all_as_read(db: db_dependency, user: user_dependency):
 
 
 @router.get("/esp32/status")
-@limiter.limit("60/minute")
+@limiter.limit("240/minute")
 async def get_esp32_commands(db: db_dependency,request:Request):
     latest = db.query(SensorLogs).order_by(SensorLogs.timestamp.desc()).first()
     devices = db.query(Device).order_by(Device.device_index).all()
@@ -293,24 +282,18 @@ async def get_esp32_commands(db: db_dependency,request:Request):
 async def get_sensor_history(
         db: db_dependency,
         user: user_dependency,
-        hours: int = 24,  # Có thể là 1, 2, 6, 12, 24
+        hours: int = 24,
         max_points: int = 50,
 ):
     if user is None:
         raise HTTPException(status_code=401,detail='Authentication Failed.')
 
     cutoff_time = datetime.datetime.now() - datetime.timedelta(hours=hours)
-
-    # Đếm tổng số bản ghi trong khoảng thời gian
     total_count = db.query(SensorLogs).filter(
         SensorLogs.timestamp >= cutoff_time
     ).count()
-
-    # Nếu không có dữ liệu
     if total_count == 0:
         return []
-
-    # Nếu dữ liệu ít hơn max_points, trả về tất cả
     if total_count <= max_points:
         logs = db.query(SensorLogs).filter(
             SensorLogs.timestamp >= cutoff_time
@@ -320,7 +303,6 @@ async def get_sensor_history(
     # Nếu nhiều dữ liệu, lấy mẫu
     step = total_count / max_points
 
-    # Dùng OFFSET để lấy mẫu hiệu quả hơn
     logs = []
     for i in range(max_points):
         offset = int(i * step)

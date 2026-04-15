@@ -75,7 +75,7 @@ async def get_admin_thresholds(db: db_dependency, user: user_dependency):
     if user.get('user_role') != 'admin':
         raise HTTPException(status_code=403, detail="Forbidden")
 
-    # CHỈ lấy những cái user_id là None (mặc định hệ thống)
+
     return db.query(Threshold).filter(Threshold.user_id == None).all()
 
 # --- 3. POST/PUT: DÀNH CHO USER (Cá nhân) ---

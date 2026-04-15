@@ -29,7 +29,7 @@ async def create_new_ticket(req: TicketCreate, db: db_dependency, user: user_dep
         status="pending"
     )
     db.add(new_ticket)
-    db.flush()  # flush để lấy ID của ticket vừa tạo mà chưa commit
+    db.flush()
 
     # Bước 2: Tạo Message đầu tiên (Nội dung câu hỏi)
     first_message = FeedbackMessage(
@@ -150,7 +150,7 @@ async def get_my_tickets(db: db_dependency, user: user_dependency):
 @router.patch("/tickets/{ticket_id}/status")
 async def update_ticket_status(
         ticket_id: int,
-        new_status: str,  # Có thể dùng Enum hoặc Check list: resolved, closed
+        new_status: str,
         db: db_dependency,
         user: user_dependency
 ):
@@ -161,13 +161,9 @@ async def update_ticket_status(
     if not ticket:
         raise HTTPException(status_code=404, detail="Ticket not found")
 
-    # Kiểm tra quyền:
-    # - Admin có quyền chuyển sang bất cứ trạng thái nào.
-    # - User có thể có quyền tự 'close' ticket của mình nếu họ thấy đã ok.
     if user.get('user_role') != 'admin' and ticket.user_id != user.get('id'):
         raise HTTPException(status_code=403, detail="Forbidden")
 
-    # Validate trạng thái hợp lệ
     valid_statuses = ["pending", "processing", "resolved", "closed"]
     if new_status not in valid_statuses:
         raise HTTPException(status_code=400, detail="Invalid status")
