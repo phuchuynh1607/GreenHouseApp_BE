@@ -78,7 +78,6 @@ async def get_ticket_details(ticket_id: int, db: db_dependency, user: user_depen
     if not ticket:
         raise HTTPException(status_code=404, detail="Ticket not found")
 
-    # Bảo mật: User chỉ được xem ticket của chính mình, Admin xem được hết
     if user.get('user_role') != 'admin' and ticket.user_id != user.get('id'):
         raise HTTPException(status_code=403, detail="Forbidden")
 
@@ -88,11 +87,8 @@ async def get_ticket_details(ticket_id: int, db: db_dependency, user: user_depen
 # --- 4. ADMIN: LẤY TẤT CẢ TICKET (ĐỂ QUẢN LÝ) ---
 @router.get("/admin/all-tickets")
 async def admin_get_all_tickets(db: db_dependency, user: user_dependency):
-    # Kiểm tra quyền Admin
     if user.get('user_role') != 'admin':
         raise HTTPException(status_code=403, detail="Admin only")
-    # Query lấy dữ liệu kèm Join
-    # Dùng selectinload thay vì joinedload nếu có nhiều messages (tránh duplicate rows)
     tickets = db.query(FeedbackTicket) \
         .options(
         selectinload(FeedbackTicket.user),
@@ -112,8 +108,8 @@ async def admin_get_all_tickets(db: db_dependency, user: user_dependency):
             "subject": t.subject,
             "status": t.status,
             "created_at": t.created_at,
-            "user_name": t.user.username if t.user else "Người dùng ẩn danh",
-            "initial_message": initial_message or "Không có nội dung"
+            "user_name": t.user.username if t.user else "Anonymous user",
+            "initial_message": initial_message or "No content"
         })
 
     return result
@@ -140,7 +136,7 @@ async def get_my_tickets(db: db_dependency, user: user_dependency):
             "subject": ticket.subject,
             "status": ticket.status,
             "created_at": ticket.created_at,
-            "initial_message": initial_message or "Không có nội dung"
+            "initial_message": initial_message or "No content"
         })
 
     return result

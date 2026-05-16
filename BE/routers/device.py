@@ -31,7 +31,6 @@ def calculate_device_pwm(device: Device, latest_sensor: SensorLogs, db: db_depen
     # Trường hợp đặc biệt: -1 và -1 là chạy suốt 24/24
     if device.start_hour == -1 and device.end_hour == -1:
         in_time = True
-    # Trường hợp một trong hai là -1 nhưng không phải cả hai (0 -1, -1 5, ...) -> Không hợp lệ
     elif device.start_hour == -1 or device.end_hour == -1:
         in_time = False
     else:
@@ -155,7 +154,7 @@ async def receive_sensor_data(req: SensorLogCreate, db: db_dependency,request: R
     db.commit()
     return {"message": "Sensor data logged and notifications checked"}
 
-# --- 2. GET: LẤY DỮ LIỆU MỚI NHẤT (Cho màn hình Dashboard trên App) ---
+# --- 2. GET: LẤY DỮ LIỆU MỚI NHẤT  ---
 @router.get("/latest-data", response_model=SensorLogResponse)
 @limiter.limit("240/minute")
 async def get_latest_sensor(db: db_dependency, user: user_dependency,request: Request):
@@ -186,7 +185,6 @@ async def control_device(req: DeviceControlRequest, db: db_dependency, user: use
     if not device:
         raise HTTPException(status_code=404, detail='Device not found!')
 
-    # Cập nhật các field từ request
     if req.mode is not None:
         device.mode = req.mode
     if req.manual_pwm is not None:
@@ -209,7 +207,6 @@ async def control_device(req: DeviceControlRequest, db: db_dependency, user: use
                 detail="AUTO mode requires: both hours = -1 (24/7) OR a valid 0-23h range (start != end)"
             )
 
-    # Logic Reset Timer (giữ nguyên nếu bạn muốn xóa sạch hẹn giờ khi sang Manual)
     if req.mode == 2 and req.start_hour is None and req.end_hour is None:
         device.start_hour = -1
         device.end_hour = -1

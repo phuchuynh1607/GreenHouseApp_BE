@@ -8,7 +8,7 @@ class FeedbackTicket(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"))
-    subject = Column(String(255)) # Tiêu đề vấn đề (ví dụ: "Lỗi cảm biến")
+    subject = Column(String(255))
     status = Column(String, default="pending") # pending, processing, resolved, closed
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
@@ -21,7 +21,7 @@ class FeedbackMessage(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     ticket_id = Column(Integer, ForeignKey("feedback_tickets.id"))
-    sender_id = Column(Integer, ForeignKey("users.id")) # Để biết ai là người nhắn
+    sender_id = Column(Integer, ForeignKey("users.id"))
     message_content = Column(Text)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 

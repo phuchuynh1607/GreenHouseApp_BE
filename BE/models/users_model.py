@@ -20,7 +20,6 @@ class Users(Base):
     user_image=Column(String,nullable=True)
 
     thresholds = relationship("Threshold", back_populates="owner", cascade="all, delete-orphan")
-    # Quan hệ mới: Một người dùng có nhiều bản ghi lịch sử đăng nhập
     login_histories = relationship("LoginHistory", back_populates="user", cascade="all, delete-orphan")
     tickets = relationship("FeedbackTicket", back_populates="user", cascade="all, delete-orphan")
 
@@ -42,13 +41,8 @@ class LoginHistory(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"))
-
-    # Thời gian đăng nhập (Tự động lấy giờ hệ thống server)
     login_time = Column(DateTime(timezone=True), server_default=func.now())
-    ip_address = Column(String, nullable=True)  # <--- Thêm dòng này
-
-    # Có thể lưu thêm thông tin bổ sung nếu muốn (Ví dụ: IP hoặc Thiết bị)
+    ip_address = Column(String, nullable=True)
     device_info = Column(String, nullable=True)
 
-    # --- RELATIONSHIP ---
     user = relationship("Users", back_populates="login_histories")

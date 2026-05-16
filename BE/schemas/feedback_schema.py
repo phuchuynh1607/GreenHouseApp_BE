@@ -24,7 +24,6 @@ class TicketResponse(BaseModel):
     subject: str
     status: str
     created_at: datetime
-    # SQLAlchemy tự động đổ dữ liệu vào đây nhờ relationship
     messages: List[MessageResponse]
 
     class Config:

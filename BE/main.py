@@ -48,12 +48,12 @@ title=settings.app_title,
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
-# Mount thư mục để có thể xem ảnh qua URL
+
 app.mount("/static", StaticFiles(directory="static"), name="static")
-# Cách 2: (Khuyên dùng cho Đồ án) Cho phép tất cả để tránh lỗi phiền phức khi đổi mạng
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"], # Cho phép tất cả các nguồn
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
